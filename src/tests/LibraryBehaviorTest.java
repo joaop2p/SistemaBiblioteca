@@ -12,6 +12,7 @@ import utils.LibraryFunctions.LibraryStatistics;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,6 +21,7 @@ public class LibraryBehaviorTest {
     public static void main(String[] args) throws InterruptedException {
         testLendingReturnAndFineReport();
         testFunctionalFilteringAndStatistics();
+        testValidationAndFailedOperations();
         testConcurrentLending();
         System.out.println("All library behavior tests passed.");
     }
@@ -100,6 +102,34 @@ public class LibraryBehaviorTest {
         require(library.findLoansByUser(user).size() == 1, "Loans must be queryable by user.");
         require(library.findActiveLoans().size() == 1, "Active loans must be queryable.");
         require(library.findBookById(fantasyBook.getId()).isPresent(), "Books must be queryable by ID.");
+    }
+
+    private static void testValidationAndFailedOperations() {
+        expectFailure(() -> new User(" ", 1005));
+        expectFailure(() -> new User("Valid", 0));
+        expectFailure(() -> new Book("", Category.FICTION, "Title"));
+        expectFailure(() -> new Book("Author", Category.FICTION, " "));
+
+        Library library = new Library();
+        User user = new User("Carla", 1005);
+        Book registeredBook = new Book("Author", Category.FICTION, "Registered");
+        Book unregisteredBook = new Book("Author", Category.FICTION, "Unregistered");
+        LocalDate loanDate = LocalDate.of(2026, 4, 10);
+        library.addUser(user);
+        library.addBook(registeredBook);
+
+        expectFailure(() -> library.addUser(new User("Duplicate", 1005)));
+        expectFailure(() -> library.lendBook(9999, registeredBook, loanDate));
+        expectFailure(() -> library.lendBook(user.getRegistrationNumber(), unregisteredBook, loanDate));
+        require(library.getLoans().isEmpty(), "Rejected lending must not create a loan.");
+        require(registeredBook.isAvailable(), "Rejected lending must leave the registered book available.");
+
+        Loan loan = library.lendBook(user.getRegistrationNumber(), registeredBook, loanDate);
+        expectFailure(() -> library.returnBook(loan.getId(), loanDate.minusDays(1)));
+        require(loan.isActive(), "A rejected return must leave the loan active.");
+        require(!registeredBook.isAvailable(), "A rejected return must leave the book unavailable.");
+        expectFailure(() -> library.returnBook(UUID.randomUUID(), loanDate));
+        require(library.findActiveLoans().size() == 1, "Unknown loan returns must not change active loans.");
     }
 
     private static void testConcurrentLending() throws InterruptedException {
