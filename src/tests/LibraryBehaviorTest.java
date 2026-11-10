@@ -21,7 +21,10 @@ public class LibraryBehaviorTest {
         testLendingReturnAndFineReport();
         testFunctionalFilteringAndStatistics();
         testConcurrentLending();
-        System.out.println("All library behavior tests passed.");
+        testRegistrationAndLendingValidation();
+        testReturnValidationAndOverdueExclusion();
+        testReadOnlySnapshots();
+        System.out.println("All 6 library behavior test groups passed.");
     }
 
     private static void testLendingReturnAndFineReport() {
@@ -129,6 +132,74 @@ public class LibraryBehaviorTest {
         require(library.getLoans().size() == 1, "Concurrent lending must create only one loan.");
     }
 
+    private static void testRegistrationAndLendingValidation() {
+        Library library = new Library();
+        User user = new User("Carla", 1005);
+        Book registeredBook = new Book("Author", Category.BIOGRAPHY, "Biography");
+
+        library.addUser(user);
+        library.addBook(registeredBook);
+        expectFailure(() -> library.addUser(new User("Duplicate", user.getRegistrationNumber())));
+        expectFailure(() -> library.addUser(null));
+        expectFailure(() -> library.addBook(registeredBook));
+        expectFailure(() -> library.addBook(null));
+        expectFailure(() -> library.lendBook(9999, registeredBook, LocalDate.of(2026, 4, 1)));
+        expectFailure(() -> library.lendBook(
+                user.getRegistrationNumber(),
+                new Book("Author", Category.BIOGRAPHY, "Unregistered"),
+                LocalDate.of(2026, 4, 1)));
+        expectFailure(() -> library.lendBook(user.getRegistrationNumber(), null, LocalDate.of(2026, 4, 1)));
+        expectFailure(() -> library.lendBook(user.getRegistrationNumber(), registeredBook, null));
+
+        require(registeredBook.isAvailable(), "Rejected lending attempts must not change book availability.");
+        require(library.getLoans().isEmpty(), "Rejected lending attempts must not create loans.");
+    }
+
+    private static void testReturnValidationAndOverdueExclusion() {
+        Library library = new Library();
+        User user = new User("Diana", 1006);
+        Book book = new Book("Author", Category.ROMANCE, "Returned overdue book");
+        LocalDate loanDate = LocalDate.of(2026, 5, 1);
+        library.addUser(user);
+        library.addBook(book);
+        Loan loan = library.lendBook(user.getRegistrationNumber(), book, loanDate);
+
+        expectFailure(() -> library.returnBook(loan.getId(), loanDate.minusDays(1)));
+        require(loan.isActive(), "A return before the loan date must not close the loan.");
+        require(!book.isAvailable(), "An invalid return must not make the book available.");
+        expectFailure(() -> library.returnBook(java.util.UUID.randomUUID(), loanDate.plusDays(1)));
+
+        library.returnBook(loan.getId(), loan.getDueDate().plusDays(5));
+        LocalDate referenceDate = loan.getDueDate().plusDays(10);
+        require(LibraryFunctions.findOverdueLoans(library.getLoans(), referenceDate).isEmpty(),
+                "A returned loan must not be reported as overdue.");
+        FineReport report = library.getFineReport(referenceDate);
+        require(report.items().isEmpty(), "Returned loans must not appear in the fine report.");
+        require(report.total().compareTo(BigDecimal.ZERO) == 0, "An empty fine report must total zero.");
+        require(library.getStatistics(referenceDate).activeLoans() == 0,
+                "Returned loans must not count as active.");
+        require(library.getStatistics(referenceDate).overdueActiveLoans() == 0,
+                "Returned loans must not count as overdue.");
+    }
+
+    private static void testReadOnlySnapshots() {
+        Library library = new Library();
+        User user = new User("Eduardo", 1007);
+        Book book = new Book("Author", Category.POETRY, "Poems");
+        library.addUser(user);
+        library.addBook(book);
+
+        List<Book> books = library.getBooks();
+        List<User> users = library.getUsers();
+        List<Loan> loans = library.getLoans();
+        expectFailure(() -> books.clear());
+        expectFailure(() -> users.clear());
+        expectFailure(() -> loans.clear());
+        require(library.getBooks().size() == 1, "Changing a returned book list must not affect the library.");
+        require(library.getUsers().size() == 1, "Changing a returned user list must not affect the library.");
+        require(library.getLoans().isEmpty(), "Changing a returned loan list must not affect the library.");
+    }
+
     private static Thread loanAttempt(
             Library library,
             User user,
@@ -158,7 +229,8 @@ public class LibraryBehaviorTest {
     private static void expectFailure(Runnable action) {
         try {
             action.run();
-        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException expected) {
+        } catch (IllegalArgumentException | IllegalStateException | NullPointerException
+                 | UnsupportedOperationException expected) {
             return;
         }
         throw new AssertionError("Expected operation to fail.");

@@ -30,6 +30,8 @@ find src -name '*.java' -print0 | xargs -0 javac -d out
 java -cp out tests.LibraryBehaviorTest
 ```
 
+A suíte executa seis grupos de testes: empréstimo/devolução e multas; filtragem e estatísticas; concorrência no empréstimo; validações de cadastro e empréstimo; validações de devolução e exclusão de empréstimos devolvidos dos atrasos; e imutabilidade das listas retornadas. Em caso de sucesso, imprime `All 6 library behavior test groups passed.`; uma falha interrompe a execução com uma `AssertionError` descritiva.
+
 ## Funcionalidades
 
 - Cadastro de livros e usuários com validação de identificadores/matrículas duplicados.
