@@ -4,7 +4,7 @@ Projeto em Java para cadastro de livros e usuários, empréstimos e devoluções
 
 ## Integrantes
 
-- João Paulo Xavier Nunes Dos Santos
+- João Paulo X. N. Santos
 
 ## Requisitos
 
